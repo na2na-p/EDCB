@@ -1,0 +1,187 @@
+name: Build Docker Image
+
+on:
+  workflow_dispatch:
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository_owner }}/edcb-linux
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - linux/amd64
+          - linux/arm64
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate CalVer tag
+        id: calver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Base CalVer: YYYY.MM.DD
+          BASE_TAG=$(date -u '+%Y.%m.%d')
+
+          # Check if base tag already exists in ghcr.io
+          HTTP_CODE=$(curl -s -o /tmp/gh_response.json -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/edcb-linux/versions")
+
+          echo "API HTTP code: ${HTTP_CODE}"
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            # Package doesn't exist yet -> first ever build
+            CALVER_TAG="${BASE_TAG}"
+            echo "Package not found, first build: ${CALVER_TAG}"
+          elif [ "$HTTP_CODE" = "200" ]; then
+            # Package exists, check if tag exists
+            TAG_EXISTS=$(jq -r ".[] | select(.metadata.container.tags[] == \"${BASE_TAG}\") | .id" /tmp/gh_response.json 2>/dev/null || echo "")
+            if [ -z "$TAG_EXISTS" ]; then
+              # Tag doesn't exist -> first build of the day
+              CALVER_TAG="${BASE_TAG}"
+              echo "Tag not found, first build of day: ${CALVER_TAG}"
+            else
+              # Tag exists -> append run_number
+              CALVER_TAG="${BASE_TAG}.${{ github.run_number }}"
+              echo "Tag exists, using: ${CALVER_TAG}"
+            fi
+          else
+            # Other error -> use run_number (safe)
+            CALVER_TAG="${BASE_TAG}.${{ github.run_number }}"
+            echo "API error (${HTTP_CODE}), using safe tag: ${CALVER_TAG}"
+          fi
+
+          rm -f /tmp/gh_response.json
+          echo "tag=${CALVER_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Prepare platform suffix
+        id: platform
+        run: |
+          PLATFORM="${{ matrix.platform }}"
+          SUFFIX="${PLATFORM//\//-}"
+          echo "suffix=${SUFFIX}" >> $GITHUB_OUTPUT
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=raw,value=${{ steps.calver.outputs.tag }}-${{ steps.platform.outputs.suffix }}
+            type=raw,value=${{ github.sha }}-${{ steps.platform.outputs.suffix }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: ${{ matrix.platform }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+
+  merge:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate CalVer tag
+        id: calver
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # Base CalVer: YYYY.MM.DD
+          BASE_TAG=$(date -u '+%Y.%m.%d')
+
+          # Check if base tag already exists in ghcr.io
+          HTTP_CODE=$(curl -s -o /tmp/gh_response.json -w "%{http_code}" \
+            -H "Authorization: Bearer $GH_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/users/${{ github.repository_owner }}/packages/container/edcb-linux/versions")
+
+          echo "API HTTP code: ${HTTP_CODE}"
+
+          if [ "$HTTP_CODE" = "404" ]; then
+            # Package doesn't exist yet -> first ever build
+            CALVER_TAG="${BASE_TAG}"
+            echo "Package not found, first build: ${CALVER_TAG}"
+          elif [ "$HTTP_CODE" = "200" ]; then
+            # Package exists, check if tag exists
+            TAG_EXISTS=$(jq -r ".[] | select(.metadata.container.tags[] == \"${BASE_TAG}\") | .id" /tmp/gh_response.json 2>/dev/null || echo "")
+            if [ -z "$TAG_EXISTS" ]; then
+              # Tag doesn't exist -> first build of the day
+              CALVER_TAG="${BASE_TAG}"
+              echo "Tag not found, first build of day: ${CALVER_TAG}"
+            else
+              # Tag exists -> append run_number
+              CALVER_TAG="${BASE_TAG}.${{ github.run_number }}"
+              echo "Tag exists, using: ${CALVER_TAG}"
+            fi
+          else
+            # Other error -> use run_number (safe)
+            CALVER_TAG="${BASE_TAG}.${{ github.run_number }}"
+            echo "API error (${HTTP_CODE}), using safe tag: ${CALVER_TAG}"
+          fi
+
+          rm -f /tmp/gh_response.json
+          echo "tag=${CALVER_TAG}" >> $GITHUB_OUTPUT
+
+      - name: Create and push multi-arch manifest
+        run: |
+          CALVER_TAG="${{ steps.calver.outputs.tag }}"
+          SHA="${{ github.sha }}"
+
+          # Create manifest for CalVer tag
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-arm64
+
+          # Create manifest for SHA tag (full 40-char hash, no prefix)
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}-linux-arm64
+
+          # Create manifest for latest tag
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-arm64

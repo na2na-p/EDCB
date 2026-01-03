@@ -1,0 +1,45 @@
+# Git
+.git
+.gitignore
+.gitmodules
+
+# Build artifacts
+*.o
+*.obj
+*.so
+*.dll
+*.exe
+*.a
+*.gch
+*.map
+EpgTimerSrv/EpgTimerSrv/EpgTimerSrv
+EpgDataCap_Bon/EpgDataCap_Bon/EpgDataCap_Bon
+EpgDataCap3/EpgDataCap3/EpgDataCap3.so
+EpgDataCap3/EpgDataCap3/EpgDataCap3_Unicode.so
+RecName_Macro/RecName_Macro/RecName_Macro.so
+SendTSTCP/SendTSTCP/SendTSTCP.so
+Write_Default/Write_Default/Write_Default.so
+Document/Unix/asyncbuf
+Document/Unix/relayread
+Document/Unix/tsidmove-edcb
+Document/Unix/tspgtxt
+
+# Documentation
+*.md
+!docker/*.md
+Document/*.txt
+Document/*.pdf
+
+# CI/CD
+.github/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db

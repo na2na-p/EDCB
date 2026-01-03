@@ -39,6 +39,11 @@
 !*.xaml
 !*.xml
 !.gitignore
+!.dockerignore
+!Dockerfile
+!.github/
+!*.yml
+!*.yaml
 !/Document/Patch/*.diff
 !/Document/Patch/*.patch
 !/EpgTimerSrv/EpgTimerSrv/*.a

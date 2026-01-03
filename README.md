@@ -23,3 +23,27 @@ Configuration files are stored in the 'ini' directory.
 
 [branch:edcb-plug-in](https://github.com/xtne6f/EDCB/tree/edcb-plug-in)
 * EdcbPlugIn(TVTestプラグイン)のブランチ。説明は[releases](https://github.com/xtne6f/EDCB/releases)に添付
+
+---
+
+## Docker Image (docker-image branch)
+
+EDCB LinuxをDockerコンテナとして実行するためのブランチです。
+
+### 必要なもの
+
+- Mirakurun/mirakc（Unix SocketまたはTCP接続）
+- 設定ファイル用ボリューム（`/var/local/edcb`）
+- 録画ファイル用ボリューム（`/recordings`）
+
+### 実行例
+
+```bash
+docker run -d \
+  -v /path/to/config:/var/local/edcb \
+  -v /path/to/recordings:/recordings \
+  -v /var/run/mirakc.sock:/var/run/mirakc.sock \
+  -e MIRAKURUN_TYPE=unix \
+  -p 5510:5510 \
+  ghcr.io/na2na-p/edcb-linux:latest
+```
