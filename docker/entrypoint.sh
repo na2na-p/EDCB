@@ -59,6 +59,16 @@ if [ -f "${UTIL_LUA}" ]; then
     echo "Enabled ALLOW_SETTING in util.lua"
 fi
 
+# EMWUI: copy default settings if not present
+for default_file in HttpPublic.ini XCODE_OPTIONS.lua; do
+    src="${EDCB_SETTING_DIR}/${default_file}.default"
+    dst="${EDCB_SETTING_DIR}/${default_file}"
+    if [ -f "${src}" ] && [ ! -f "${dst}" ]; then
+        echo "Copying default ${default_file} for EMWUI"
+        cp "${src}" "${dst}"
+    fi
+done
+
 # Permission adjustment when running as root
 if [ "$(id -u)" = "0" ]; then
     chown -R edcb:edcb "${EDCB_SETTING_DIR}" /var/log/edcb 2>/dev/null || true

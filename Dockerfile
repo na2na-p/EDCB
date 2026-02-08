@@ -51,9 +51,22 @@ RUN mkdir -p /var/local/edcb && \
     tr -d '\r' < /src/edcb/ini/ContentTypeText.txt > /var/local/edcb/ContentTypeText.txt
 
 # =============================================================================
-# Stage 3: Runtime
+# Stage 3: EDCB Material WebUI Source
 # =============================================================================
-FROM debian:trixie-slim
+FROM debian:trixie-slim AS emwui-src
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git \
+    ca-certificates \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN git clone --depth 1 \
+    https://github.com/EMWUI/EDCB_Material_WebUI.git /src/emwui
+
+# =============================================================================
+# Stage 4: Runtime
+# =============================================================================
+FROM debian:trixie-slim AS runtime
 
 LABEL maintainer="na2na"
 LABEL description="EDCB Linux - Digital TV Recording Server"
@@ -114,3 +127,18 @@ WORKDIR /var/local/edcb
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
 
 CMD ["/usr/local/bin/EpgTimerSrv"]
+
+# =============================================================================
+# Stage 5: Runtime with EDCB Material WebUI
+# =============================================================================
+FROM runtime AS runtime-emwui
+
+COPY --from=emwui-src /src/emwui/HttpPublic/EMWUI/ /var/local/edcb/HttpPublic/EMWUI/
+COPY --from=emwui-src /src/emwui/HttpPublic/api/ /var/local/edcb/HttpPublic/api/
+COPY --from=emwui-src /src/emwui/Setting/HttpPublic.ini /var/local/edcb/HttpPublic.ini.default
+COPY --from=emwui-src /src/emwui/Setting/XCODE_OPTIONS.lua /var/local/edcb/XCODE_OPTIONS.lua.default
+
+RUN chown -R edcb:edcb /var/local/edcb/HttpPublic/EMWUI/ \
+    /var/local/edcb/HttpPublic/api/ \
+    /var/local/edcb/HttpPublic.ini.default \
+    /var/local/edcb/XCODE_OPTIONS.lua.default

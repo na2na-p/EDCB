@@ -15,6 +15,11 @@ jobs:
         platform:
           - linux/amd64
           - linux/arm64
+        target:
+          - name: runtime
+            suffix: ""
+          - name: runtime-emwui
+            suffix: "-emwui"
     permissions:
       contents: read
       packages: write
@@ -90,23 +95,33 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=${{ steps.calver.outputs.tag }}-${{ steps.platform.outputs.suffix }}
-            type=raw,value=${{ github.sha }}-${{ steps.platform.outputs.suffix }}
+            type=raw,value=${{ steps.calver.outputs.tag }}${{ matrix.target.suffix }}-${{ steps.platform.outputs.suffix }}
+            type=raw,value=${{ github.sha }}${{ matrix.target.suffix }}-${{ steps.platform.outputs.suffix }}
 
       - name: Build and push
         uses: docker/build-push-action@v6
         with:
           context: .
+          target: ${{ matrix.target.name }}
           platforms: ${{ matrix.platform }}
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha,scope=${{ matrix.platform }}
-          cache-to: type=gha,scope=${{ matrix.platform }},mode=max
+          cache-from: type=gha,scope=${{ matrix.target.name }}-${{ matrix.platform }}
+          cache-to: type=gha,scope=${{ matrix.target.name }}-${{ matrix.platform }},mode=max
 
   merge:
     runs-on: ubuntu-latest
     needs: build
+    strategy:
+      matrix:
+        target:
+          - name: runtime
+            suffix: ""
+            latest_tag: latest
+          - name: runtime-emwui
+            suffix: "-emwui"
+            latest_tag: emwui
     permissions:
       contents: read
       packages: write
@@ -170,18 +185,20 @@ jobs:
         run: |
           CALVER_TAG="${{ steps.calver.outputs.tag }}"
           SHA="${{ github.sha }}"
+          SUFFIX="${{ matrix.target.suffix }}"
+          LATEST_TAG="${{ matrix.target.latest_tag }}"
 
           # Create manifest for CalVer tag
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}${SUFFIX} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}${SUFFIX}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}${SUFFIX}-linux-arm64
 
           # Create manifest for SHA tag (full 40-char hash, no prefix)
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA} \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}-linux-arm64
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}${SUFFIX} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}${SUFFIX}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${SHA}${SUFFIX}-linux-arm64
 
-          # Create manifest for latest tag
-          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-amd64 \
-            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}-linux-arm64
+          # Create manifest for latest/emwui tag
+          docker buildx imagetools create -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${LATEST_TAG} \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}${SUFFIX}-linux-amd64 \
+            ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${CALVER_TAG}${SUFFIX}-linux-arm64
